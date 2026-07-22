@@ -1,0 +1,48 @@
+{
+  "name": "face-overlay",
+  "version": "0.2.0",
+  "description": "Real-time facial expression overlay for streaming, built on MediaPipe Face Landmarker. Runs as a standalone Electron app.",
+  "type": "module",
+  "main": "electron/main.cjs",
+  "scripts": {
+    "dev": "concurrently -k -n vite,electron -c blue,green \"vite\" \"wait-on tcp:5173 && cross-env ELECTRON_START_URL=http://localhost:5173 electron .\"",
+    "build": "vite build",
+    "start": "electron .",
+    "dist": "npm run build && electron-builder"
+  },
+  "license": "MIT",
+  "dependencies": {
+    "@mediapipe/tasks-vision": "^0.10.35"
+  },
+  "devDependencies": {
+    "vite": "^8.1.5",
+    "electron": "^33.0.0",
+    "electron-builder": "^25.1.8",
+    "concurrently": "^9.1.0",
+    "wait-on": "^8.0.1",
+    "cross-env": "^7.0.3"
+  },
+  "build": {
+    "appId": "com.sawaruto123.face-overlay",
+    "productName": "Face Overlay",
+    "files": [
+      "dist/**/*",
+      "electron/**/*"
+    ],
+    "directories": {
+      "output": "release"
+    },
+    "win": {
+      "target": "portable"
+    },
+    "mac": {
+      "target": "dmg",
+      "extendInfo": {
+        "NSCameraUsageDescription": "Face Overlay needs camera access to track your expressions."
+      }
+    },
+    "linux": {
+      "target": "AppImage"
+    }
+  }
+}

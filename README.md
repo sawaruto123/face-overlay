@@ -17,7 +17,12 @@ npm run dev
 A small frameless window pops up immediately with your webcam feed and
 expression art. No URL to open — this **is** the app window.
 
-Click the ⚙ gear icon (top-right of the window) to open Settings:
+Click the header pill (top-right of the window — your character's face in
+a small circle, next to the current expression name) to open Settings.
+That little circle isn't just a button — it's a live readout of whatever
+expression is currently detected, updating in real time.
+
+Inside:
 
 - **Camera** — pick which webcam to use.
 - **Overlay mode** — `Video + art` (composited, opaque) or `Art only`

@@ -1,5 +1,5 @@
 import { EXPRESSIONS } from './blendshapes.js';
-import { setExpressionImage } from './render.js';
+import { getExpressionImageSrc, setExpressionImage } from './render.js';
 
 const STORAGE_KEY = 'face-overlay:settings';
 
@@ -25,6 +25,21 @@ const listeners = [];
 
 const isElectron = typeof window !== 'undefined' && Boolean(window.faceOverlay?.isElectron);
 
+// Small line-icon set (Feather-style: 24x24, currentColor, 1.8 stroke) used
+// next to each settings section header — generic UI iconography, not
+// branded/copyrighted art.
+const ICONS = {
+  camera: '<circle cx="12" cy="13" r="4"/><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/>',
+  layers: '<path d="M12 2 2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/>',
+  sliders: '<line x1="4" y1="21" x2="4" y2="14"/><line x1="4" y1="10" x2="4" y2="3"/><line x1="12" y1="21" x2="12" y2="12"/><line x1="12" y1="8" x2="12" y2="3"/><line x1="20" y1="21" x2="20" y2="16"/><line x1="20" y1="12" x2="20" y2="3"/><line x1="1" y1="14" x2="7" y2="14"/><line x1="9" y1="8" x2="15" y2="8"/><line x1="17" y1="16" x2="23" y2="16"/>',
+  image: '<rect x="3" y="3" width="18" height="18" rx="3"/><circle cx="8.5" cy="8.5" r="1.6"/><path d="M21 15l-5-5L5 21"/>',
+  monitor: '<rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/>',
+};
+
+function icon(name, extraClass = '') {
+  return `<svg class="fo-icon ${extraClass}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">${ICONS[name] || ''}</svg>`;
+}
+
 function loadFromStorage() {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
@@ -48,7 +63,7 @@ function notify() {
   for (const listener of listeners) listener({ ...settings });
 }
 
-/** Merge in a partial settings update, persist, and notify listeners. @param {Partial<Settings>} partial */
+/** @param {Partial<Settings>} partial */
 function update(partial) {
   settings = { ...settings, ...partial };
   notify();
@@ -85,124 +100,287 @@ function injectStyles() {
   const style = document.createElement('style');
   style.id = 'face-overlay-settings-style';
   style.textContent = `
+    :root {
+      --fo-ink: #16141c;
+      --fo-glass: rgba(21, 19, 27, 0.78);
+      --fo-glass-soft: rgba(255, 255, 255, 0.05);
+      --fo-line: rgba(255, 255, 255, 0.09);
+      --fo-text: #f4f0e6;
+      --fo-text-dim: #a79fb3;
+      --fo-accent: #ffd24d;
+      --fo-accent-strong: #e0ad1f;
+      --fo-danger: #ff6b6b;
+      --fo-radius: 16px;
+    }
+
     .fo-drag-strip {
       position: fixed;
       top: 0; left: 0; right: 0;
-      height: 28px;
+      height: 26px;
       -webkit-app-region: drag;
       z-index: 1000;
     }
-    .fo-gear {
+
+    .fo-header {
       position: fixed;
-      top: 8px; right: 8px;
-      width: 32px; height: 32px;
+      top: 10px; right: 10px;
+      display: flex;
+      align-items: center;
+      gap: 9px;
+      padding: 5px 12px 5px 5px;
+      background: var(--fo-glass);
+      backdrop-filter: blur(22px) saturate(160%);
+      -webkit-backdrop-filter: blur(22px) saturate(160%);
+      border: 1px solid var(--fo-line);
+      border-radius: 999px;
+      box-shadow: 0 8px 24px rgba(0,0,0,0.35);
+      -webkit-app-region: no-drag;
+      z-index: 1002;
+      cursor: pointer;
+      font: 500 12px/1 -apple-system, 'Segoe UI', system-ui, sans-serif;
+      transition: box-shadow 0.15s ease, transform 0.15s ease;
+    }
+    .fo-header:hover { transform: translateY(1px); box-shadow: 0 4px 14px rgba(0,0,0,0.4); }
+    .fo-header:active { transform: translateY(2px) scale(0.98); }
+
+    .fo-mascot {
+      width: 30px; height: 30px;
       border-radius: 50%;
-      border: none;
-      background: rgba(20, 20, 24, 0.55);
-      color: #fff;
-      font-size: 16px;
-      cursor: pointer;
-      -webkit-app-region: no-drag;
-      z-index: 1001;
-      transition: background 0.15s ease, transform 0.15s ease;
-    }
-    .fo-gear:hover { background: rgba(20, 20, 24, 0.85); transform: rotate(30deg); }
-    .fo-panel {
-      position: fixed;
-      top: 48px; right: 8px;
-      width: 280px;
-      max-height: calc(100vh - 64px);
-      overflow-y: auto;
-      background: rgba(18, 18, 22, 0.92);
-      color: #f2f2f5;
-      border-radius: 10px;
-      padding: 14px;
-      font: 13px/1.4 system-ui, sans-serif;
-      box-shadow: 0 8px 24px rgba(0,0,0,0.4);
-      -webkit-app-region: no-drag;
-      z-index: 1001;
-      display: none;
-    }
-    .fo-panel.open { display: block; }
-    .fo-panel h3 {
-      margin: 0 0 10px;
-      font-size: 12px;
-      text-transform: uppercase;
-      letter-spacing: 0.06em;
-      color: #9a9aa5;
-    }
-    .fo-field { margin-bottom: 10px; }
-    .fo-field label {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      gap: 8px;
-      cursor: pointer;
-    }
-    .fo-field select, .fo-field input[type="color"] {
-      width: 100%;
-      margin-top: 4px;
-      background: #1e1e24;
-      color: #fff;
-      border: 1px solid #3a3a44;
-      border-radius: 6px;
-      padding: 4px 6px;
-    }
-    .fo-field input[type="range"] {
-      width: 100%;
-      margin-top: 4px;
-    }
-    .fo-slider-label {
-      display: flex;
-      justify-content: space-between;
-    }
-    .fo-slider-value {
-      color: #9a9aa5;
-      font-variant-numeric: tabular-nums;
-    }
-    .fo-image-row {
-      display: flex;
-      align-items: center;
-      gap: 8px;
-      margin-bottom: 8px;
-    }
-    .fo-image-row .fo-thumb {
-      width: 32px; height: 32px;
-      border-radius: 6px;
-      object-fit: cover;
-      background: #1e1e24;
-      border: 1px solid #3a3a44;
+      background: radial-gradient(circle at 35% 30%, #2a2733, #16141c);
+      border: 1.5px solid var(--fo-accent);
+      box-shadow: 0 0 0 3px rgba(255, 210, 77, 0.12);
+      display: flex; align-items: center; justify-content: center;
+      overflow: hidden;
       flex-shrink: 0;
     }
-    .fo-image-row .fo-name {
-      flex: 1;
-      font-size: 12px;
+    .fo-mascot img { width: 100%; height: 100%; object-fit: cover; }
+    .fo-mascot.fo-pulse { animation: fo-pulse-ring 0.5s ease-out; }
+    @keyframes fo-pulse-ring {
+      0% { box-shadow: 0 0 0 3px rgba(255, 210, 77, 0.55); }
+      100% { box-shadow: 0 0 0 3px rgba(255, 210, 77, 0.12); }
+    }
+
+    .fo-header-text {
+      display: flex;
+      flex-direction: column;
+      line-height: 1.25;
+    }
+    .fo-header-title {
+      color: var(--fo-text);
+      font-weight: 600;
+      letter-spacing: 0.01em;
+    }
+    .fo-header-live {
+      color: var(--fo-accent);
+      font-size: 10.5px;
       text-transform: capitalize;
+      letter-spacing: 0.02em;
     }
-    .fo-image-row button {
-      background: #2a2a32;
-      color: #fff;
-      border: 1px solid #3a3a44;
-      border-radius: 6px;
-      padding: 4px 8px;
+
+    .fo-panel {
+      position: fixed;
+      top: 54px; right: 10px;
+      width: 292px;
+      max-height: calc(100vh - 70px);
+      overflow-y: auto;
+      background: var(--fo-glass);
+      backdrop-filter: blur(26px) saturate(160%);
+      -webkit-backdrop-filter: blur(26px) saturate(160%);
+      color: var(--fo-text);
+      border: 1px solid var(--fo-line);
+      border-radius: var(--fo-radius);
+      padding: 8px;
+      font: 13px/1.4 -apple-system, 'Segoe UI', system-ui, sans-serif;
+      box-shadow: 0 20px 60px rgba(0,0,0,0.45);
+      -webkit-app-region: no-drag;
+      z-index: 1001;
+      transform-origin: top right;
+      opacity: 0;
+      transform: scale(0.95) translateY(-4px);
+      pointer-events: none;
+      transition: opacity 0.14s ease, transform 0.14s ease;
+    }
+    .fo-panel.open {
+      opacity: 1;
+      transform: scale(1) translateY(0);
+      pointer-events: auto;
+    }
+    .fo-panel::-webkit-scrollbar { width: 8px; }
+    .fo-panel::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.12); border-radius: 8px; }
+
+    .fo-section {
+      padding: 10px 10px 12px;
+      border-bottom: 1px solid var(--fo-line);
+    }
+    .fo-section:last-child { border-bottom: none; }
+
+    .fo-section-title {
+      display: flex;
+      align-items: center;
+      gap: 7px;
+      margin: 0 0 10px;
+      font-size: 11px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: var(--fo-text-dim);
+    }
+    .fo-icon { width: 14px; height: 14px; color: var(--fo-accent); flex-shrink: 0; }
+
+    .fo-field { margin-bottom: 10px; }
+    .fo-field:last-child { margin-bottom: 0; }
+    .fo-field-label {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 5px;
+      color: var(--fo-text);
+    }
+    .fo-field-value {
+      color: var(--fo-text-dim);
+      font-variant-numeric: tabular-nums;
+      font-size: 11.5px;
+    }
+
+    select {
+      width: 100%;
+      background: var(--fo-glass-soft);
+      color: var(--fo-text);
+      border: 1px solid var(--fo-line);
+      border-radius: 8px;
+      padding: 7px 8px;
+      font: inherit;
+    }
+    select:focus-visible { outline: 2px solid var(--fo-accent); outline-offset: 1px; }
+
+    input[type="range"] {
+      -webkit-appearance: none;
+      width: 100%;
+      height: 5px;
+      border-radius: 3px;
+      background: var(--fo-glass-soft);
+      outline: none;
+    }
+    input[type="range"]::-webkit-slider-thumb {
+      -webkit-appearance: none;
+      width: 15px; height: 15px;
+      border-radius: 50%;
+      background: var(--fo-accent);
+      border: 2px solid var(--fo-ink);
+      box-shadow: 0 0 0 3px rgba(255, 210, 77, 0.2);
       cursor: pointer;
-      font-size: 11px;
-      white-space: nowrap;
     }
-    .fo-image-row button:hover { background: #35353e; }
-    .fo-image-row .fo-reset {
+    input[type="range"]:focus-visible::-webkit-slider-thumb { outline: 2px solid var(--fo-text); }
+
+    input[type="color"] {
+      width: 100%;
+      height: 30px;
+      border-radius: 8px;
+      border: 1px solid var(--fo-line);
+      background: var(--fo-glass-soft);
+      padding: 2px;
+      cursor: pointer;
+    }
+
+    .fo-switch-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      cursor: pointer;
+      padding: 2px 0;
+    }
+    .fo-switch-row .fo-field-label-text { color: var(--fo-text); }
+    input.fo-switch {
+      -webkit-appearance: none;
+      width: 34px; height: 19px;
+      border-radius: 999px;
+      background: rgba(255,255,255,0.14);
+      position: relative;
+      flex-shrink: 0;
+      cursor: pointer;
+      transition: background 0.15s ease;
+    }
+    input.fo-switch::after {
+      content: '';
+      position: absolute;
+      top: 2px; left: 2px;
+      width: 15px; height: 15px;
+      border-radius: 50%;
+      background: #fff;
+      transition: transform 0.15s ease;
+    }
+    input.fo-switch:checked { background: var(--fo-accent-strong); }
+    input.fo-switch:checked::after { transform: translateX(15px); }
+
+    .fo-image-strip {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 8px;
+    }
+    .fo-image-cell {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 4px;
+      padding: 6px 4px 8px;
+      border-radius: 10px;
+      border: 1px solid transparent;
+      transition: border-color 0.15s ease, background 0.15s ease;
+    }
+    .fo-image-cell.fo-live {
+      border-color: var(--fo-accent);
+      background: rgba(255, 210, 77, 0.07);
+    }
+    .fo-image-cell .fo-thumb-btn {
+      width: 48px; height: 48px;
+      border-radius: 10px;
+      border: 1px solid var(--fo-line);
+      background: var(--fo-glass-soft);
+      padding: 0;
+      cursor: pointer;
+      overflow: hidden;
+    }
+    .fo-image-cell .fo-thumb-btn img {
+      width: 100%; height: 100%;
+      object-fit: cover;
+      display: block;
+    }
+    .fo-image-cell .fo-name {
+      font-size: 10.5px;
+      color: var(--fo-text-dim);
+      text-transform: capitalize;
+      text-align: center;
+    }
+    .fo-image-cell .fo-reset {
       display: none;
-      color: #ff8a8a;
-      border-color: #4a3232;
+      border: none;
+      background: none;
+      color: var(--fo-danger);
+      font-size: 10px;
+      cursor: pointer;
+      padding: 0;
     }
-    .fo-image-row.fo-has-custom .fo-reset { display: inline-block; }
-    .fo-hint {
-      font-size: 11px;
-      color: #7c7c86;
-      margin-top: 8px;
-      border-top: 1px solid #33333c;
-      padding-top: 8px;
+    .fo-image-cell.fo-has-custom .fo-reset { display: inline-block; }
+
+    .fo-hotkeys {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      margin-top: 10px;
+      font-size: 11.5px;
+      color: var(--fo-text-dim);
     }
+    .fo-hotkeys div { display: flex; justify-content: space-between; align-items: center; }
+    kbd {
+      background: rgba(255,255,255,0.08);
+      border: 1px solid var(--fo-line);
+      border-radius: 5px;
+      padding: 2px 6px;
+      font: 10.5px ui-monospace, 'SF Mono', Consolas, monospace;
+      color: var(--fo-text);
+    }
+
     .fo-actions {
       display: flex;
       gap: 6px;
@@ -210,21 +388,36 @@ function injectStyles() {
     }
     .fo-actions button {
       flex: 1;
-      background: #2a2a32;
-      color: #fff;
-      border: 1px solid #3a3a44;
-      border-radius: 6px;
-      padding: 6px;
+      background: var(--fo-glass-soft);
+      color: var(--fo-text);
+      border: 1px solid var(--fo-line);
+      border-radius: 8px;
+      padding: 7px 6px;
       cursor: pointer;
-      font-size: 12px;
+      font: 500 11.5px inherit;
+      transition: background 0.15s ease;
     }
-    .fo-actions button:hover { background: #35353e; }
+    .fo-actions button:hover { background: rgba(255,255,255,0.1); }
+    .fo-actions button.fo-danger { color: var(--fo-danger); }
+
+    .fo-note {
+      font-size: 11px;
+      color: var(--fo-text-dim);
+      line-height: 1.5;
+    }
   `;
   document.head.appendChild(style);
 }
 
 function formatExpressionName(name) {
   return name.replace(/-/g, ' ');
+}
+
+function setSliderFill(slider) {
+  const min = Number(slider.min) || 0;
+  const max = Number(slider.max) || 100;
+  const pct = ((Number(slider.value) - min) / (max - min)) * 100;
+  slider.style.background = `linear-gradient(to right, var(--fo-accent) ${pct}%, rgba(255,255,255,0.08) ${pct}%)`;
 }
 
 /** Opens the Electron native file dialog, or a hidden <input type="file"> in a plain browser tab. Returns a data: URL or null. */
@@ -287,7 +480,29 @@ async function populateCameraOptions(select) {
   }
 }
 
-/** Build and wire up the gear-icon settings panel. Call once, after webcam permission has been granted. */
+let mascotImg = null;
+let mascotBtn = null;
+let liveLabel = null;
+let liveExpressionCells = new Map();
+
+/** Called from the render loop whenever the detected expression changes — updates the live mascot button and highlights the matching row in Expression Art. @param {string} name */
+export function updateLiveExpression(name) {
+  if (mascotImg) {
+    const src = getExpressionImageSrc(name);
+    if (src) mascotImg.src = src;
+  }
+  if (liveLabel) liveLabel.textContent = formatExpressionName(name);
+  if (mascotBtn) {
+    mascotBtn.classList.remove('fo-pulse');
+    void mascotBtn.offsetWidth;
+    mascotBtn.classList.add('fo-pulse');
+  }
+  for (const [exprName, cell] of liveExpressionCells) {
+    cell.classList.toggle('fo-live', exprName === name);
+  }
+}
+
+/** Build and wire up the header + settings panel. Call once, after webcam permission has been granted. */
 export async function setupSettingsPanel() {
   injectStyles();
 
@@ -295,79 +510,99 @@ export async function setupSettingsPanel() {
   dragStrip.className = 'fo-drag-strip';
   document.body.appendChild(dragStrip);
 
-  const gear = document.createElement('button');
-  gear.className = 'fo-gear';
-  gear.textContent = '⚙';
-  gear.title = 'Settings';
-  document.body.appendChild(gear);
+  const header = document.createElement('button');
+  header.className = 'fo-header';
+  header.title = 'Face Overlay settings';
+  header.innerHTML = `
+    <span class="fo-mascot" id="fo-mascot">
+      <img id="fo-mascot-img" alt="" />
+    </span>
+    <span class="fo-header-text">
+      <span class="fo-header-title">Face Overlay</span>
+      <span class="fo-header-live" id="fo-live-label">neutral</span>
+    </span>
+  `;
+  document.body.appendChild(header);
+
+  mascotBtn = header.querySelector('#fo-mascot');
+  mascotImg = header.querySelector('#fo-mascot-img');
+  liveLabel = header.querySelector('#fo-live-label');
+  const initialSrc = getExpressionImageSrc('neutral');
+  if (initialSrc) mascotImg.src = initialSrc;
 
   const panel = document.createElement('div');
   panel.className = 'fo-panel';
   panel.innerHTML = `
-    <h3>Camera</h3>
-    <div class="fo-field">
-      <select id="fo-camera"></select>
+    <div class="fo-section">
+      <div class="fo-section-title">${icon('camera')}Camera</div>
+      <div class="fo-field">
+        <select id="fo-camera"></select>
+      </div>
     </div>
 
-    <h3>Overlay</h3>
-    <div class="fo-field">
-      <label>
-        Mode
+    <div class="fo-section">
+      <div class="fo-section-title">${icon('layers')}Overlay</div>
+      <div class="fo-field">
         <select id="fo-mode">
           <option value="composited">Video + art (composited)</option>
           <option value="transparent">Art only (transparent window)</option>
         </select>
-      </label>
-    </div>
-    <div class="fo-field" id="fo-chroma-field" style="display:none">
-      <label>
-        Fallback background (non-Electron)
+      </div>
+      <div class="fo-field" id="fo-chroma-field" style="display:none">
+        <div class="fo-field-label"><span>Fallback background</span></div>
         <input type="color" id="fo-chroma" />
-      </label>
+      </div>
     </div>
 
-    <h3>Reaction</h3>
-    <div class="fo-field">
-      <div class="fo-slider-label">
-        <span>Sensitivity</span>
-        <span class="fo-slider-value" id="fo-sensitivity-value"></span>
+    <div class="fo-section">
+      <div class="fo-section-title">${icon('sliders')}Expression tuning</div>
+      <div class="fo-field">
+        <div class="fo-field-label"><span>Sensitivity</span><span class="fo-field-value" id="fo-sensitivity-value"></span></div>
+        <input type="range" id="fo-sensitivity" min="0" max="100" step="1" />
       </div>
-      <input type="range" id="fo-sensitivity" min="0" max="100" step="1" />
-    </div>
-    <div class="fo-field">
-      <div class="fo-slider-label">
-        <span>Overlay size</span>
-        <span class="fo-slider-value" id="fo-scale-value"></span>
+      <div class="fo-field">
+        <div class="fo-field-label"><span>Overlay size</span><span class="fo-field-value" id="fo-scale-value"></span></div>
+        <input type="range" id="fo-scale" min="50" max="200" step="5" />
       </div>
-      <input type="range" id="fo-scale" min="50" max="200" step="5" />
     </div>
 
-    <h3>Custom Art</h3>
-    <div id="fo-custom-art-list"></div>
+    <div class="fo-section">
+      <div class="fo-section-title">${icon('image')}Expression art</div>
+      <div class="fo-image-strip" id="fo-custom-art-list"></div>
+    </div>
 
     ${isElectron ? `
-    <h3>Window</h3>
-    <div class="fo-field">
-      <label><input type="checkbox" id="fo-always-on-top" /> Always on top</label>
-    </div>
-    <div class="fo-field">
-      <label><input type="checkbox" id="fo-click-through" /> Click-through (mouse passes to apps behind)</label>
-    </div>
-    <div class="fo-actions">
-      <button id="fo-reset">Reset position</button>
-      <button id="fo-hide">Hide</button>
-      <button id="fo-quit">Quit</button>
-    </div>
-    <div class="fo-hint">
-      Hotkeys — Show/hide: Ctrl+Alt+F9 · Click-through: Ctrl+Alt+F10.<br/>
-      Turning on click-through hides this panel behind your other windows —
-      use the tray icon or hotkey to turn it back off.
+    <div class="fo-section">
+      <div class="fo-section-title">${icon('monitor')}Window</div>
+      <div class="fo-field">
+        <label class="fo-switch-row">
+          <span class="fo-field-label-text">Always on top</span>
+          <input type="checkbox" class="fo-switch" id="fo-always-on-top" />
+        </label>
+      </div>
+      <div class="fo-field">
+        <label class="fo-switch-row">
+          <span class="fo-field-label-text">Click-through</span>
+          <input type="checkbox" class="fo-switch" id="fo-click-through" />
+        </label>
+      </div>
+      <div class="fo-actions">
+        <button id="fo-reset">Reset position</button>
+        <button id="fo-hide">Hide</button>
+        <button id="fo-quit" class="fo-danger">Quit</button>
+      </div>
+      <div class="fo-hotkeys">
+        <div><span>Show / hide</span><kbd>Ctrl+Alt+F9</kbd></div>
+        <div><span>Click-through</span><kbd>Ctrl+Alt+F10</kbd></div>
+      </div>
     </div>` : `
-    <div class="fo-hint">Running in a browser tab. Camera and window settings are limited — for the full app, run via Electron.</div>`}
+    <div class="fo-section">
+      <p class="fo-note">Running in a browser tab. Camera and window controls are limited — for the full app, run via Electron.</p>
+    </div>`}
   `;
   document.body.appendChild(panel);
 
-  gear.addEventListener('click', () => panel.classList.toggle('open'));
+  header.addEventListener('click', () => panel.classList.toggle('open'));
 
   const cameraSelect = panel.querySelector('#fo-camera');
   await populateCameraOptions(cameraSelect);
@@ -395,9 +630,11 @@ export async function setupSettingsPanel() {
   const sensitivityValue = panel.querySelector('#fo-sensitivity-value');
   sensitivitySlider.value = String(settings.sensitivity);
   sensitivityValue.textContent = String(settings.sensitivity);
+  setSliderFill(sensitivitySlider);
   sensitivitySlider.addEventListener('input', () => {
     const value = Number(sensitivitySlider.value);
     sensitivityValue.textContent = String(value);
+    setSliderFill(sensitivitySlider);
     update({ sensitivity: value });
   });
 
@@ -405,52 +642,61 @@ export async function setupSettingsPanel() {
   const scaleValue = panel.querySelector('#fo-scale-value');
   scaleSlider.value = String(Math.round(settings.scale * 100));
   scaleValue.textContent = `${scaleSlider.value}%`;
+  setSliderFill(scaleSlider);
   scaleSlider.addEventListener('input', () => {
     scaleValue.textContent = `${scaleSlider.value}%`;
+    setSliderFill(scaleSlider);
     update({ scale: Number(scaleSlider.value) / 100 });
   });
 
   const customArtList = panel.querySelector('#fo-custom-art-list');
+  liveExpressionCells = new Map();
   for (const name of EXPRESSIONS) {
-    const row = document.createElement('div');
-    row.className = 'fo-image-row';
-    if (settings.customImages[name]) row.classList.add('fo-has-custom');
+    const cell = document.createElement('div');
+    cell.className = 'fo-image-cell';
+    if (settings.customImages[name]) cell.classList.add('fo-has-custom');
+    liveExpressionCells.set(name, cell);
 
+    const thumbBtn = document.createElement('button');
+    thumbBtn.className = 'fo-thumb-btn';
+    thumbBtn.title = `Choose art for ${formatExpressionName(name)}`;
     const thumb = document.createElement('img');
-    thumb.className = 'fo-thumb';
     thumb.alt = name;
-    if (settings.customImages[name]) thumb.src = settings.customImages[name];
+    const existingSrc = settings.customImages[name] || getExpressionImageSrc(name);
+    if (existingSrc) thumb.src = existingSrc;
+    thumbBtn.appendChild(thumb);
 
-    const label = document.createElement('span');
-    label.className = 'fo-name';
-    label.textContent = formatExpressionName(name);
-
-    const chooseBtn = document.createElement('button');
-    chooseBtn.textContent = 'Choose…';
-    chooseBtn.addEventListener('click', async () => {
+    thumbBtn.addEventListener('click', async () => {
       const raw = await pickImageFile();
       if (!raw) return;
       const dataUrl = await downscaleDataUrl(raw);
       update({ customImages: { ...settings.customImages, [name]: dataUrl } });
       setExpressionImage(name, dataUrl);
       thumb.src = dataUrl;
-      row.classList.add('fo-has-custom');
+      cell.classList.add('fo-has-custom');
     });
+
+    const label = document.createElement('span');
+    label.className = 'fo-name';
+    label.textContent = formatExpressionName(name);
 
     const resetBtn = document.createElement('button');
     resetBtn.className = 'fo-reset';
     resetBtn.textContent = 'Reset';
-    resetBtn.addEventListener('click', () => {
+    resetBtn.addEventListener('click', (event) => {
+      event.stopPropagation();
       const customImages = { ...settings.customImages };
       delete customImages[name];
       update({ customImages });
       setExpressionImage(name, null);
-      thumb.removeAttribute('src');
-      row.classList.remove('fo-has-custom');
+      const fallbackSrc = getExpressionImageSrc(name);
+      if (fallbackSrc) thumb.src = fallbackSrc;
+      else thumb.removeAttribute('src');
+      cell.classList.remove('fo-has-custom');
     });
 
-    row.append(thumb, label, chooseBtn, resetBtn);
-    customArtList.appendChild(row);
+    cell.append(thumbBtn, label, resetBtn);
+    customArtList.appendChild(cell);
   }
 
   if (isElectron) {

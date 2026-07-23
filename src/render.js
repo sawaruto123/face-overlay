@@ -43,6 +43,16 @@ function loadImage(name) {
   });
 }
 
+/**
+ * @param {string} name
+ * @returns {string | null} The src of the currently loaded image for this
+ *   expression (custom or default asset), or null if none has loaded yet
+ *   (that expression falls back to the canvas placeholder shape).
+ */
+export function getExpressionImageSrc(name) {
+  return images[name]?.src ?? null;
+}
+
 /** Preload all expression assets (PNG/SVG/WebP). Missing files use canvas fallbacks. */
 export async function preloadAssets() {
   await Promise.all(EXPRESSIONS.map((name) => loadImage(name)));

@@ -1,4 +1,6 @@
-﻿* text=auto eol=crlf
+# Let git normalize line endings on checkin, convert to CRLF on checkout for
+# text files (Windows-friendly), keep binary assets untouched.
+* text=auto eol=crlf
 
 *.png binary
 *.jpg binary

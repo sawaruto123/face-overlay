@@ -18,7 +18,7 @@ import {
   drawVideoFrame,
   preloadAssets,
 } from './render.js';
-import { getSettings, initSettings, onSettingsUpdate, setupSettingsPanel } from './settings-panel.js';
+import { getSettings, initSettings, onSettingsUpdate, setupSettingsPanel, updateLiveExpression } from './settings-panel.js';
 
 const WASM_PATH =
   'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision/wasm';
@@ -39,6 +39,7 @@ const debug = params.get('debug') === '1';
 let faceLandmarker = null;
 let lastVideoTime = -1;
 let currentCameraDeviceId = null;
+let lastLiveExpression = null;
 const smoother = new ExpressionSmoother(120);
 
 async function initMediaPipe() {
@@ -108,6 +109,11 @@ function renderLoop() {
         const rawExpression = detectExpression(scores, sensitivity);
         const expression = smoother.update(rawExpression, performance.now());
         const yaw = getHeadYaw(landmarks);
+
+        if (expression !== lastLiveExpression) {
+          lastLiveExpression = expression;
+          updateLiveExpression(expression);
+        }
 
         drawOverlay(ctx, expression, bounds, yaw, scale);
 

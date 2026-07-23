@@ -1,6 +1,27 @@
-const { app, BrowserWindow, Tray, Menu, globalShortcut, ipcMain, nativeImage, screen, dialog } = require('electron');
+const { app, BrowserWindow, Tray, Menu, globalShortcut, ipcMain, nativeImage, screen, dialog, protocol, net } = require('electron');
 const path = require('node:path');
 const fs = require('node:fs');
+const { pathToFileURL } = require('node:url');
+
+// Must be called before the app is ready. A plain `file://` URL can't load
+// ES module scripts (Chromium blocks module scripts over file:// with a
+// CORS-style restriction — this is why `npm run dev`, served over
+// http://localhost, worked fine but the packaged .exe showed a blank
+// window: the JS silently failed to execute at all). Registering our own
+// scheme as "standard" + "secure" + "corsEnabled" makes it behave like a
+// real HTTP origin as far as module loading is concerned.
+protocol.registerSchemesAsPrivileged([
+  {
+    scheme: 'app',
+    privileges: {
+      standard: true,
+      secure: true,
+      supportFetchAPI: true,
+      corsEnabled: true,
+      stream: true,
+    },
+  },
+]);
 
 // --- Persisted window state (position/size/alwaysOnTop/clickThrough) -------
 // Small hand-rolled JSON store instead of a dependency — this is the only
@@ -69,7 +90,7 @@ function createWindow() {
 
   mainWindow.setIgnoreMouseEvents(state.clickThrough, { forward: true });
 
-  const startUrl = process.env.ELECTRON_START_URL || `file://${path.join(__dirname, '../dist/index.html')}`;
+  const startUrl = process.env.ELECTRON_START_URL || 'app://local/index.html';
   mainWindow.loadURL(startUrl);
 
   mainWindow.on('moved', () => {
@@ -234,6 +255,16 @@ ipcMain.on('window:drag-resize-reset', () => {
 });
 
 app.whenReady().then(() => {
+  // Serve dist/ under app://local/... — only relevant in production, since
+  // dev mode loads ELECTRON_START_URL (the Vite dev server) instead.
+  protocol.handle('app', (request) => {
+    const url = new URL(request.url);
+    let pathname = decodeURIComponent(url.pathname);
+    if (!pathname || pathname === '/') pathname = '/index.html';
+    const filePath = path.join(__dirname, '../dist', pathname);
+    return net.fetch(pathToFileURL(filePath).toString());
+  });
+
   createWindow();
   createTray();
   registerShortcuts();

@@ -1,5 +1,6 @@
 import { EXPRESSIONS } from './blendshapes.js';
 import { getExpressionImageSrc, setExpressionImage } from './render.js';
+import { MicMonitor, micThresholdFromSensitivity } from './audio.js';
 
 const STORAGE_KEY = 'face-overlay:settings';
 
@@ -15,6 +16,10 @@ const DEFAULTS = {
   sensitivity: 50,
   scale: 1,
   customImages: {},
+  autoBlink: true,
+  audioReactiveMouth: false,
+  micSensitivity: 50,
+  micDeviceId: null,
 };
 
 /** @type {Settings} */
@@ -34,6 +39,7 @@ const ICONS = {
   sliders: '<line x1="4" y1="21" x2="4" y2="14"/><line x1="4" y1="10" x2="4" y2="3"/><line x1="12" y1="21" x2="12" y2="12"/><line x1="12" y1="8" x2="12" y2="3"/><line x1="20" y1="21" x2="20" y2="16"/><line x1="20" y1="12" x2="20" y2="3"/><line x1="1" y1="14" x2="7" y2="14"/><line x1="9" y1="8" x2="15" y2="8"/><line x1="17" y1="16" x2="23" y2="16"/>',
   image: '<rect x="3" y="3" width="18" height="18" rx="3"/><circle cx="8.5" cy="8.5" r="1.6"/><path d="M21 15l-5-5L5 21"/>',
   monitor: '<rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/>',
+  activity: '<polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/>',
 };
 
 function icon(name, extraClass = '') {
@@ -101,6 +107,7 @@ function injectStyles() {
   style.id = 'face-overlay-settings-style';
   style.textContent = `
     :root {
+      color-scheme: dark;
       --fo-ink: #16141c;
       --fo-glass: rgba(21, 19, 27, 0.78);
       --fo-glass-soft: rgba(255, 255, 255, 0.05);
@@ -252,6 +259,10 @@ function injectStyles() {
       font: inherit;
     }
     select:focus-visible { outline: 2px solid var(--fo-accent); outline-offset: 1px; }
+    select option {
+      background: #201d29;
+      color: var(--fo-text);
+    }
 
     input[type="range"] {
       -webkit-appearance: none;
@@ -362,6 +373,31 @@ function injectStyles() {
       padding: 0;
     }
     .fo-image-cell.fo-has-custom .fo-reset { display: inline-block; }
+
+    .fo-meter {
+      position: relative;
+      height: 9px;
+      border-radius: 5px;
+      background: var(--fo-glass-soft);
+      border: 1px solid var(--fo-line);
+      overflow: hidden;
+    }
+    .fo-meter-fill {
+      position: absolute;
+      top: 0; left: 0; bottom: 0;
+      width: 0%;
+      background: linear-gradient(to right, var(--fo-accent-strong), var(--fo-accent));
+      transition: width 0.06s linear;
+    }
+    .fo-meter-threshold {
+      position: absolute;
+      top: -2px; bottom: -2px;
+      width: 2px;
+      background: #fff;
+      opacity: 0.8;
+      left: 50%;
+      box-shadow: 0 0 4px rgba(255,255,255,0.6);
+    }
 
     .fo-hotkeys {
       display: flex;
@@ -484,6 +520,50 @@ let mascotImg = null;
 let mascotBtn = null;
 let liveLabel = null;
 let liveExpressionCells = new Map();
+/** @type {MicMonitor | null} */
+let micMonitor = null;
+let micDeviceSelect = null;
+
+/** @returns {number} Current mic level (0-1), or 0 if the monitor isn't running. */
+export function getMicLevel() {
+  return micMonitor?.getLevel() ?? 0;
+}
+
+async function populateMicOptions(select) {
+  if (!select) return;
+  select.innerHTML = '<option value="">Default microphone</option>';
+  try {
+    const devices = await navigator.mediaDevices.enumerateDevices();
+    const mics = devices.filter((d) => d.kind === 'audioinput');
+    for (const mic of mics) {
+      const option = document.createElement('option');
+      option.value = mic.deviceId;
+      option.textContent = mic.label || `Microphone ${select.length}`;
+      if (mic.deviceId === settings.micDeviceId) option.selected = true;
+      select.appendChild(option);
+    }
+  } catch (err) {
+    console.error('Failed to list microphones:', err);
+  }
+}
+
+/** Starts/stops/restarts the mic monitor to match current settings (on/off, device). */
+async function restartMicIfNeeded() {
+  if (!settings.audioReactiveMouth) {
+    micMonitor?.stop();
+    return;
+  }
+  if (!micMonitor) micMonitor = new MicMonitor();
+  micMonitor.stop(); // no-op if not running yet; guarantees a clean restart on device change
+  try {
+    await micMonitor.start(settings.micDeviceId || undefined);
+    // Device labels are usually blank until mic permission is actually
+    // granted — refresh the list now that it (probably) has been.
+    await populateMicOptions(micDeviceSelect);
+  } catch (err) {
+    console.error('Failed to access microphone:', err);
+  }
+}
 
 /** Called from the render loop whenever the detected expression changes — updates the live mascot button and highlights the matching row in Expression Art. @param {string} name */
 export function updateLiveExpression(name) {
@@ -567,6 +647,37 @@ export async function setupSettingsPanel() {
     </div>
 
     <div class="fo-section">
+      <div class="fo-section-title">${icon('activity')}Liveliness</div>
+      <div class="fo-field">
+        <label class="fo-switch-row">
+          <span class="fo-field-label-text">Auto-blink</span>
+          <input type="checkbox" class="fo-switch" id="fo-auto-blink" />
+        </label>
+      </div>
+      <div class="fo-field">
+        <label class="fo-switch-row">
+          <span class="fo-field-label-text">Audio-reactive mouth</span>
+          <input type="checkbox" class="fo-switch" id="fo-audio-mouth" />
+        </label>
+      </div>
+      <div id="fo-mic-controls" style="display:none">
+        <div class="fo-field">
+          <select id="fo-mic-device"></select>
+        </div>
+        <div class="fo-field">
+          <div class="fo-meter">
+            <div class="fo-meter-fill" id="fo-mic-meter-fill"></div>
+            <div class="fo-meter-threshold" id="fo-mic-meter-threshold"></div>
+          </div>
+        </div>
+        <div class="fo-field">
+          <div class="fo-field-label"><span>Mic sensitivity</span><span class="fo-field-value" id="fo-mic-sensitivity-value"></span></div>
+          <input type="range" id="fo-mic-sensitivity" min="0" max="100" step="1" />
+        </div>
+      </div>
+    </div>
+
+    <div class="fo-section">
       <div class="fo-section-title">${icon('image')}Expression art</div>
       <div class="fo-image-strip" id="fo-custom-art-list"></div>
     </div>
@@ -609,7 +720,10 @@ export async function setupSettingsPanel() {
   cameraSelect.addEventListener('change', () => {
     update({ cameraDeviceId: cameraSelect.value || null });
   });
-  navigator.mediaDevices.addEventListener?.('devicechange', () => populateCameraOptions(cameraSelect));
+  navigator.mediaDevices.addEventListener?.('devicechange', () => {
+    populateCameraOptions(cameraSelect);
+    populateMicOptions(micDeviceSelect);
+  });
 
   const modeSelect = panel.querySelector('#fo-mode');
   modeSelect.value = settings.overlayMode;
@@ -648,6 +762,59 @@ export async function setupSettingsPanel() {
     setSliderFill(scaleSlider);
     update({ scale: Number(scaleSlider.value) / 100 });
   });
+
+  const autoBlinkCheckbox = panel.querySelector('#fo-auto-blink');
+  autoBlinkCheckbox.checked = settings.autoBlink;
+  autoBlinkCheckbox.addEventListener('change', () => {
+    update({ autoBlink: autoBlinkCheckbox.checked });
+  });
+
+  const audioMouthCheckbox = panel.querySelector('#fo-audio-mouth');
+  const micControls = panel.querySelector('#fo-mic-controls');
+  micDeviceSelect = panel.querySelector('#fo-mic-device');
+  const micMeterFill = panel.querySelector('#fo-mic-meter-fill');
+  const micMeterThreshold = panel.querySelector('#fo-mic-meter-threshold');
+  const micSensitivitySlider = panel.querySelector('#fo-mic-sensitivity');
+  const micSensitivityValue = panel.querySelector('#fo-mic-sensitivity-value');
+
+  function updateMicThresholdMarker() {
+    const threshold = micThresholdFromSensitivity(settings.micSensitivity);
+    micMeterThreshold.style.left = `${Math.min(100, Math.max(0, threshold * 100))}%`;
+  }
+
+  audioMouthCheckbox.checked = settings.audioReactiveMouth;
+  micControls.style.display = settings.audioReactiveMouth ? 'block' : 'none';
+  micSensitivitySlider.value = String(settings.micSensitivity);
+  micSensitivityValue.textContent = String(settings.micSensitivity);
+  setSliderFill(micSensitivitySlider);
+  updateMicThresholdMarker();
+  await populateMicOptions(micDeviceSelect);
+
+  audioMouthCheckbox.addEventListener('change', async () => {
+    micControls.style.display = audioMouthCheckbox.checked ? 'block' : 'none';
+    update({ audioReactiveMouth: audioMouthCheckbox.checked });
+    await restartMicIfNeeded();
+  });
+  micDeviceSelect.addEventListener('change', async () => {
+    update({ micDeviceId: micDeviceSelect.value || null });
+    await restartMicIfNeeded();
+  });
+  micSensitivitySlider.addEventListener('input', () => {
+    const value = Number(micSensitivitySlider.value);
+    micSensitivityValue.textContent = String(value);
+    setSliderFill(micSensitivitySlider);
+    update({ micSensitivity: value });
+    updateMicThresholdMarker();
+  });
+
+  (function tickMeter() {
+    micMeterFill.style.width = `${Math.min(100, getMicLevel() * 100)}%`;
+    requestAnimationFrame(tickMeter);
+  })();
+
+  if (settings.audioReactiveMouth) {
+    restartMicIfNeeded().catch((err) => console.error('Failed to start microphone:', err));
+  }
 
   const customArtList = panel.querySelector('#fo-custom-art-list');
   liveExpressionCells = new Map();

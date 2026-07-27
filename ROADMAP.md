@@ -25,6 +25,9 @@ the app window directly in OBS via Window Capture.
   - Overlay mode
   - Sensitivity slider (adjusts detection thresholds)
   - Overlay size slider
+  - Auto-blink — randomized idle blink so the avatar doesn't freeze
+  - Audio-reactive mouth — drives the open-mouth art off mic volume as an
+    alternative/supplement to jaw-tracking, with its own sensitivity slider
   - Per-expression custom art — pick your own image per expression via a
     native file picker; stored in the app, no manual file management
   - Window controls: always-on-top, click-through, reset position, hide, quit
@@ -72,12 +75,7 @@ just a menu to pick from.
 - [ ] **Export/import settings** — a "Download my settings" / "Restore from
   file" pair in the settings panel, so custom art + preferences have an
   actual backup. Probably the single highest value-per-effort item given
-  we've already had one scare with lost custom art.
-- [ ] **Auto-blink** — optional randomized blink every few seconds so the
-  avatar feels alive even when you're not physically blinking often.
-- [ ] **Audio-reactive mouth** — drive the open-mouth image off mic volume
-  as an alternative (or addition) to jaw-tracking, since jaw detection can
-  be flaky at side angles or fast speech.
+  we've already had a couple of scares with lost/overwritten custom art.
 - [ ] **"Away" state** — if no face is detected for N seconds, fade out or
   swap to a dedicated "away" image instead of freezing on the last
   expression.

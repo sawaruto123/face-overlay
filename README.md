@@ -27,10 +27,20 @@ Inside:
 - **Camera** — pick which webcam to use.
 - **Overlay mode** — `Video + art` (composited, opaque) or `Art only`
   (real window transparency, for layering over a separate webcam source).
-- **Reaction** — `Sensitivity` (how easily an expression triggers — higher
+- **Expression tuning** — `Sensitivity` (how easily an expression triggers — higher
   reacts to smaller changes) and `Overlay size` (scale of the art relative
   to your detected face).
-- **Custom Art** — replace any of the six built-in expressions with your
+- **Liveliness** — `Auto-blink` (a subtle randomized blink every few
+  seconds so the avatar doesn't freeze during quiet moments — never
+  overrides a real detected expression) and `Audio-reactive mouth` (drives
+  the open-mouth art off mic volume instead of/alongside jaw-tracking,
+  useful since jaw detection can be flaky at side angles or fast speech).
+  Turning this on reveals a microphone picker, a live input-level meter, and
+  a `Mic sensitivity` slider — the meter shows a marker where the current
+  sensitivity threshold sits, so you can see exactly why it is or isn't
+  triggering while you talk. Requests microphone access only when you turn
+  this on, never at launch.
+- **Expression art** — replace any of the six built-in expressions with your
   own image via a file picker (thumbnail preview, `Reset` to go back to the
   default). Images are downscaled automatically and stored in the app so
   there's nothing to keep track of on disk — pick once and it persists
@@ -108,7 +118,7 @@ canvas placeholder is drawn instead.
 Default art is already included in `assets/expressions/` — a simple flat
 character with matching eyebrows/eyes/mouth per expression. Replace any of
 them by dropping a same-named file into `assets/expressions/`, or use the
-in-app **Custom Art** picker in Settings (no file management needed).
+in-app **Expression art** picker in Settings (no file management needed).
 
 Editable vector sources for the built-in art live in
 `assets/expressions-src/*.svg` — open them in any SVG/vector editor (or a

@@ -3,10 +3,12 @@ import {
   FilesetResolver,
 } from '@mediapipe/tasks-vision';
 import {
+  AutoBlinker,
   detectExpression,
   ExpressionSmoother,
   parseBlendshapes,
 } from './blendshapes.js';
+import { micThresholdFromSensitivity } from './audio.js';
 import { getFaceBounds, getHeadYaw } from './landmarks.js';
 import {
   applyBackgroundMode,
@@ -18,7 +20,7 @@ import {
   drawVideoFrame,
   preloadAssets,
 } from './render.js';
-import { getSettings, initSettings, onSettingsUpdate, setupSettingsPanel, updateLiveExpression } from './settings-panel.js';
+import { getMicLevel, getSettings, initSettings, onSettingsUpdate, setupSettingsPanel, updateLiveExpression } from './settings-panel.js';
 
 const WASM_PATH =
   'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision/wasm';
@@ -41,6 +43,7 @@ let lastVideoTime = -1;
 let currentCameraDeviceId = null;
 let lastLiveExpression = null;
 const smoother = new ExpressionSmoother(120);
+const autoBlinker = new AutoBlinker();
 
 async function initMediaPipe() {
   const vision = await FilesetResolver.forVisionTasks(WASM_PATH);
@@ -94,7 +97,7 @@ function renderLoop() {
       performance.now(),
     );
 
-    const { overlayMode, sensitivity, scale } = getSettings();
+    const { overlayMode, sensitivity, scale, autoBlink, audioReactiveMouth, micSensitivity } = getSettings();
 
     clearCanvas(ctx, canvas.width, canvas.height);
     if (overlayMode === 'composited') {
@@ -106,8 +109,22 @@ function renderLoop() {
       const bounds = getFaceBounds(landmarks, canvas.width, canvas.height);
       if (bounds) {
         const scores = parseBlendshapes(result.faceBlendshapes?.[0]);
-        const rawExpression = detectExpression(scores, sensitivity);
-        const expression = smoother.update(rawExpression, performance.now());
+        let rawExpression = detectExpression(scores, sensitivity);
+
+        // Audio-reactive mouth only steps in when face-tracking itself isn't
+        // showing anything more specific (happy/shocked/blink/brows-up keep
+        // priority) — it just decides between neutral/mouth-open using mic
+        // volume instead of (or alongside) jaw-tracking.
+        if (audioReactiveMouth && (rawExpression === 'neutral' || rawExpression === 'mouth-open')) {
+          const threshold = micThresholdFromSensitivity(micSensitivity);
+          rawExpression = getMicLevel() > threshold ? 'mouth-open' : 'neutral';
+        }
+
+        const now = performance.now();
+        let expression = smoother.update(rawExpression, now);
+        if (autoBlink) {
+          expression = autoBlinker.apply(expression, now);
+        }
         const yaw = getHeadYaw(landmarks);
 
         if (expression !== lastLiveExpression) {

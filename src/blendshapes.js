@@ -133,6 +133,46 @@ export function detectExpression(scores, sensitivity = 50) {
 }
 
 /**
+ * Injects a brief randomized blink every few seconds when nothing else is
+ * going on, so the avatar doesn't look frozen during quiet moments — purely
+ * cosmetic, never overrides a real detected expression (including a real
+ * blink, which just passes through unchanged).
+ */
+export class AutoBlinker {
+  /** @param {{ minIntervalMs?: number, maxIntervalMs?: number, blinkDurationMs?: number }} [options] */
+  constructor({ minIntervalMs = 2200, maxIntervalMs = 5500, blinkDurationMs = 160 } = {}) {
+    this.minIntervalMs = minIntervalMs;
+    this.maxIntervalMs = maxIntervalMs;
+    this.blinkDurationMs = blinkDurationMs;
+    this.nextBlinkAt = this._scheduleNext(typeof performance !== 'undefined' ? performance.now() : 0);
+    this.blinkUntil = 0;
+  }
+
+  _scheduleNext(now) {
+    return now + this.minIntervalMs + Math.random() * (this.maxIntervalMs - this.minIntervalMs);
+  }
+
+  /**
+   * @param {Expression} expression The already-smoothed detected expression.
+   * @param {number} now
+   * @returns {Expression}
+   */
+  apply(expression, now) {
+    if (expression !== 'neutral') return expression;
+
+    if (now < this.blinkUntil) return 'blink';
+
+    if (now >= this.nextBlinkAt) {
+      this.blinkUntil = now + this.blinkDurationMs;
+      this.nextBlinkAt = this._scheduleNext(now);
+      return 'blink';
+    }
+
+    return expression;
+  }
+}
+
+/**
  * Smooth expression changes to reduce flicker between frames.
  */
 export class ExpressionSmoother {

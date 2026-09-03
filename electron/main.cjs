@@ -85,6 +85,7 @@ function createWindow() {
       preload: path.join(__dirname, 'preload.cjs'),
       contextIsolation: true,
       nodeIntegration: false,
+      sandbox: true,
     },
   });
 
@@ -92,6 +93,12 @@ function createWindow() {
 
   const startUrl = process.env.ELECTRON_START_URL || 'app://local/index.html';
   mainWindow.loadURL(startUrl);
+
+  // Security: keep the window pinned to the app:// origin — block navigation
+  // to any remote http(s) URL (e.g. if the renderer were ever compromised).
+  mainWindow.webContents.on('will-navigate', (event, url) => {
+    if (!url.startsWith('app://')) event.preventDefault();
+  });
 
   mainWindow.on('moved', () => {
     const [x, y] = mainWindow.getPosition();
@@ -261,7 +268,13 @@ app.whenReady().then(() => {
     const url = new URL(request.url);
     let pathname = decodeURIComponent(url.pathname);
     if (!pathname || pathname === '/') pathname = '/index.html';
-    const filePath = path.join(__dirname, '../dist', pathname);
+    // Security: resolve against dist/ and refuse anything that escapes it
+    // (blocks path traversal like app://local/../../package.json).
+    const distRoot = path.resolve(__dirname, '../dist');
+    const filePath = path.resolve(distRoot, '.' + pathname);
+    if (filePath !== distRoot && !filePath.startsWith(distRoot + path.sep)) {
+      return new Response('Forbidden', { status: 403 });
+    }
     return net.fetch(pathToFileURL(filePath).toString());
   });
 
@@ -283,3 +296,4 @@ app.on('window-all-closed', () => {
 app.on('will-quit', () => {
   globalShortcut.unregisterAll();
 });
+

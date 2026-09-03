@@ -6,6 +6,7 @@
   "main": "electron/main.cjs",
   "scripts": {
     "dev": "concurrently -k -n vite,electron -c blue,green \"vite\" \"wait-on tcp:5173 && cross-env ELECTRON_START_URL=http://localhost:5173 electron .\"",
+    "prebuild": "node scripts/prepare-assets.mjs",
     "build": "vite build",
     "start": "electron .",
     "dist": "npm run build && electron-builder"
@@ -50,3 +51,4 @@
     }
   }
 }
+

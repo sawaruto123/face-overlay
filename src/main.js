@@ -22,10 +22,9 @@ import {
 } from './render.js';
 import { getMicLevel, getSettings, initSettings, onSettingsUpdate, setupSettingsPanel, updateLiveExpression } from './settings-panel.js';
 
-const WASM_PATH =
-  'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision/wasm';
-const MODEL_PATH =
-  'https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task';
+// Local bundled assets (see scripts/prepare-assets.mjs) — no CDN dependency.
+const WASM_PATH = './wasm';
+const MODEL_PATH = './models/face_landmarker.task';
 
 const canvas = /** @type {HTMLCanvasElement} */ (document.getElementById('overlay'));
 const ctx = canvas.getContext('2d');
@@ -187,3 +186,4 @@ async function main() {
 }
 
 main();
+
